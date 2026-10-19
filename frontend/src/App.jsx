@@ -9,6 +9,9 @@ import { SocketIOProvider } from "y-socket.io"
 const App = () => {
 
   const editorRef = useRef(null)
+
+const providerRef = useRef(null);
+const bindingRef = useRef(null);
   const [userName, setUserName] = useState(() => {
     return new URLSearchParams(window.location.search).get("username") || ""
   })
@@ -17,55 +20,130 @@ const App = () => {
   const ydoc = useMemo(() => new y.Doc(), [])
   const yText = useMemo(() => ydoc.getText("monaco"), [ydoc])
 
+  // const handleMount = (editor) => {
+  //   editorRef.current = editor
+  //   new MonacoBinding(yText,
+  //       editorRef.current.getModel(),
+  //       new Set([editorRef.current]),
+  //       provider.awareness
+  //     )
+  // }
+
   const handleMount = (editor) => {
-    editorRef.current = editor
-  }
+  editorRef.current = editor;
+
+  if (!providerRef.current) return;
+
+  bindingRef.current = new MonacoBinding(
+    yText,
+    editor.getModel(),
+    new Set([editor]),
+    providerRef.current.awareness
+  );
+};
 
   const handleJoin = (e) => {
     e.preventDefault()
     setUserName(e.target.username.value)
     window.history.pushState({}, "", "?username=" + e.target.username.value)
+
+
   }
 
+  // useEffect(() => {
+  //   console.log(userName)
+
+  //   if (userName ) {
+
+  //     const provider = new SocketIOProvider("http://localhost:3000", "monaco", ydoc, {
+  //       autoConnect: true
+  //     })
+
+  //     provider.awareness.setLocalState("user", { userName })
+
+  //     const states=Array.from(provider.awareness.getStates().values())
+
+  //     console.log(states)
+
+
+  //     setUsers(states.filter(user=>user&&user.username).map(state=>state.user))
+
+  //     provider.awareness.on("change", () => {
+  //      const states=Array.from(provider.awareness.getStates().values())
+  //      setUsers(states.map(state=>state.user).filter(user=>Boolean(user.username)))
+  //     })
+
+
+  //     function handleBeforeUnload(){
+  //       provider.awareness.setLocalStateField("user",null)
+  //     }
+
+  //     window.addEventListener("beforeunload",handleBeforeUnload)
+
+  
+
+
+  //   }
+
+  // }, [editorRef, userName])
+
   useEffect(() => {
+  if (!userName.trim()) return;
 
-    if (userName && editorRef.current) {
-
-      const provider = new SocketIOProvider("http://localhost:3000", "monaco", ydoc, {
-        autoConnect: true
-      })
-
-      provider.awareness.setLocalState("user", { userName })
-
-      const states=Array.from(provider.awareness.getStates().values())
-
-      console.log(states)
-
-
-      setUsers(states.filter(user=>user&&user.username).map(state=>state.user))
-
-      provider.awareness.on("change", () => {
-       const states=Array.from(provider.awareness.getStates().values())
-       setUsers(states.map(state=>state.user).filter(user=>Boolean(user.username)))
-      })
-
-
-      function handleBeforeUnload(){
-        provider.awareness.setLocalStateField("user",null)
-      }
-
-      window.addEventListener("beforeunload",handleBeforeUnload)
-
-      const monacoBinding = new MonacoBinding(yText,
-        editorRef.current.getModel(),
-        new Set([editorRef.current]),
-        provider.awareness
-      )
-
-
+  const provider = new SocketIOProvider(
+    // "http://localhost:3000",
+      "/",
+    "monaco",
+    ydoc,
+    {
+      autoConnect: true,
     }
+  );
 
-  }, [editorRef.current, userName])
+  providerRef.current = provider;
+
+  provider.awareness.setLocalStateField("user", {
+    username: userName.trim(),
+  });
+
+  const updateUsers = () => {
+    const states = Array.from(
+      provider.awareness.getStates().values()
+    );
+
+    setUsers(
+      states
+        .map((state) => state.user)
+        .filter((user) => user?.username)
+    );
+  };
+
+  provider.awareness.on("change", updateUsers);
+
+  updateUsers();
+
+  // Editor mount ho chuka ho to binding abhi create karo
+  if (editorRef.current) {
+    bindingRef.current = new MonacoBinding(
+      yText,
+      editorRef.current.getModel(),
+      new Set([editorRef.current]),
+      provider.awareness
+    );
+  }
+
+  return () => {
+    provider.awareness.off("change", updateUsers);
+
+    bindingRef.current?.destroy();
+    bindingRef.current = null;
+
+    provider.awareness.setLocalStateField("user", null);
+    provider.disconnect();
+
+    providerRef.current = null;
+  };
+}, [userName, ydoc, yText]);
 
 
 
